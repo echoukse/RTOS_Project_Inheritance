@@ -522,12 +522,13 @@ void OS_Block_bSignal(Sema4Type *semaPt){
 	TCBType *temp_TCBptr;
 	temp_TCBptr = semaPt->BlockedList; //this TCB task (highest priority (or head) is woken up
 	(semaPt->Value) = (semaPt->Value) + 1;
+	
 	//## added priority inheritance
 	RunPt->Semaptr = DeleteSema4(RunPt->Semaptr,semaPt); //delete the sema4 from the list of sema4s held by this thread
 	sema4_iter = RunPt->Semaptr;
 	// routine to restore the priority
 	// priority = original priority or blocked thread priority whichever is higher
-	while(!sema4_iter)  //if tasks holds other sema4s
+	while(!sema4_iter)  //if tasks holds other sema4s //ASK: What is this? why is it !sema4?
 	{
 		if(!sema4_iter->BlockedList) //if sema4 has other tasks blocked on it
 		{	
@@ -536,6 +537,7 @@ void OS_Block_bSignal(Sema4Type *semaPt){
 	  }     
      sema4_iter = sema4_iter->next_sema4;
 	}
+	
 	//updating the priority
 	// done by deleting the current thread holding sema4 from run list
   // changing the priority
@@ -947,17 +949,25 @@ void OS_HGInit( HGType *lock, int val){
 
 /*Hourglass*/
 void OS_HGreg( HGType *lock, int TID){
+	// This thread just registers, so no priority inheritance done here.
+	//First get a new Node initialised
 	HGlistType *newnode ;
 	newnode = (HGlistType*)malloc(sizeof(HGlistType));
 	newnode->TID = TID;
+	//Add it to the list of registered ones
 	if(lock->head == NULL)
 		lock->free = 0;
 	newnode->next = lock->head;
 	lock->head = newnode;
 }
 
+//TODO: put start and end criticals!!!!!
 /*Hourglass*/
 void OS_HGDereg( HGType *lock, int TID){
+	//This thread needs to roll back the priority to original, or max of other sema4s/HGs
+	
+	
+	//First remove it from the list
 	HGlistType *temp1, *temp2;
 	temp1 = lock->head;
 	if(temp1==NULL)
@@ -973,8 +983,98 @@ void OS_HGDereg( HGType *lock, int TID){
 		temp1 = temp2;
 		temp2 = temp2->next;
 	}
-	if(lock->head == NULL)
-		lock->free = 1;
+
+	//Now rollback its priority
+	//## added priority inheritance
+	Sema4Type *sema4_iter;
+	int highest_priority = RunPt->actual_priority;
+	RunPt->HGptr = DeleteHG(RunPt->HGptr,lock); //delete the sema4 from the list of sema4s held by this thread
+	sema4_iter = RunPt->Semaptr;
+	// routine to restore the priority
+	// priority = original priority or blocked thread priority whichever is higher
+	while(!sema4_iter)  //if tasks holds other sema4s //ASK: What is this? why is it !sema4?
+	{
+		if(!sema4_iter->BlockedList) //if sema4 has other tasks blocked on it
+		{	
+     if( highest_priority > sema4_iter->BlockedList->priority ) //only work if Blocked list is according to priority 
+         highest_priority = sema4_iter->BlockedList->priority;
+	  }     
+     sema4_iter = sema4_iter->next_sema4;
+	}
+	
+	HGType *HG_iter = RunPt->HGptr;
+	while(!HG_iter)  //if tasks holds other HGs //ASK: What is this? why is it !sema4?
+	{
+		if(HG_iter->priority != -1) //if HGs has other tasks blocked on it
+		{	
+     if( highest_priority > HG_iter->priority ) //only work if Blocked list is according to priority 
+         highest_priority = HG_iter->priority;
+	  }     
+     HG_iter = HG_iter->next_HG;
+	}
+	
+	//updating the priority
+	// done by deleting the current thread holding sema4 from run list
+  // changing the priority
+  // Add the same task back with updated priority		 
+	int done =1;
+		do{
+		  RunHead = DeleteTask(RunHead, RunPt, 0,&done);
+		}while(done==0);
+		RunPt->priority = highest_priority;  // priority inheritance;  
+		RunHead=Insert_priorityTask(RunHead, RunPt);
+		
+		if(lock->head == NULL){
+			lock->free = 1;
+			//regular stuff - wake up blocked thread	
+			if(lock->blocked != 0){
+				TCBType *Woken_TCBptr;
+				done = 1;
+				do{
+					lock->WaitEmptyList = DeleteTask(lock->WaitEmptyList, Woken_TCBptr, 0, &done);
+					}while(done==0);
+				//Last blocker woken, update the priority of HG
+				if(lock->WaitEmptyList == NULL){
+					lock->priority = -1;
+				}
+				else{
+					lock->priority = lock->WaitEmptyList->priority; // Next blocking thread's priority
+				}
+				RunHead = Insert_priorityTask(RunHead, Woken_TCBptr); //Insert the woken thread 
+				OS_Suspend();	
+			}
+		}
+		
+		else{
+			//EndCritical(status);
+		  OS_Suspend(); //priority has changed so context switch
+		}			
+	
+}
+
+/*Hourglass*/
+//sets the HG->block to 1 and makes this thread wait till the HG->free is 1. 
+//No new thread will be allowed to register till this thread leaves the CS.
+//If HG is already blocked, puts this thread in WaitList
+void OS_HGWait( HGType *lock, int TID){
+	
+}
+
+/*Hourglass*/
+//If there are other threads in the WaitExclusiveList, puts one of those in CS
+//Else sets the HG->blocked = 0
+void OS_HGSignal( HGType *lock, int TID){
+	
+	
+}
+
+/*Hourglass*/
+//Just makes the thread wait in the WaitEmptyList till the CS is empty. 
+//Priority inheritance applies.
+//Once the CS is empty, the thread is let go. Shifted to RunList.
+void OS_HGBlock( HGType *lock, int TID){
+	
+	
 }
 
 void SysTick_Handler(void){

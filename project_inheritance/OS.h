@@ -56,6 +56,8 @@ struct  Hourglass{
 	TCBType *WaitExclusiveList; //head of threads waiting for the CS to empty, wanting to get into the CS alone
 	int free; //Are there any threads in the CS represented by the hourglass
 	int blocked; //If an external thread has inverted the hourglass, this is 1. Now no new threads can be registered
+	int priority; //Group priority of the threads in CS, -1 if no priority inheritance happened
+	struct Hourglass *next_HG; // so that we can make a list of all HGs held by a Thread	
 };
 
 struct Events{
