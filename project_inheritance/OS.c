@@ -966,6 +966,7 @@ void OS_HGreg( HGType *lock, int TID){
 void OS_HGDereg( HGType *lock, int TID){
 	//This thread needs to roll back the priority to original, or max of other sema4s/HGs
 	
+	long status = StartCritical();
 	
 	//First remove it from the list
 	HGlistType *temp1, *temp2;
@@ -1041,12 +1042,17 @@ void OS_HGDereg( HGType *lock, int TID){
 					lock->priority = lock->WaitEmptyList->priority; // Next blocking thread's priority
 				}
 				RunHead = Insert_priorityTask(RunHead, Woken_TCBptr); //Insert the woken thread 
+				EndCritical(status);
 				OS_Suspend();	
+			}
+			else{
+				EndCritical(status);
+				OS_Suspend();
 			}
 		}
 		
 		else{
-			//EndCritical(status);
+			EndCritical(status);
 		  OS_Suspend(); //priority has changed so context switch
 		}			
 	
@@ -1057,7 +1063,23 @@ void OS_HGDereg( HGType *lock, int TID){
 //No new thread will be allowed to register till this thread leaves the CS.
 //If HG is already blocked, puts this thread in WaitList
 void OS_HGWait( HGType *lock, int TID){
-	
+	long sr = StartCritical();
+	//Blocking happens without caring about whether there are readers in CS
+	lock->blocked = 1;
+  if(lock->priority	< TCBs[TID].priority){
+		lock->priority = TCBs[TID].priority;
+	}
+	//If there are readers in the CS, get added to the waiting list
+	if(!lock->free){
+		int done =1;
+		do{
+		  RunHead = DeleteTask(RunHead, RunPt, 0,&done);
+		}while(done==0);
+		lock->WaitExclusiveList = Insert_priorityTask(lock->WaitExclusiveList, RunPt);		
+		EndCritical(sr);
+		OS_Suspend();
+	}
+	EndCritical(sr); //No Readers in the CS, go ahead
 }
 
 /*Hourglass*/
