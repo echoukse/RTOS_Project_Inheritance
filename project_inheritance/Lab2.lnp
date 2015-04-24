@@ -1,0 +1,17 @@
+--cpu Cortex-M4
+".\startup.o"
+".\timer0.o"
+".\pll.o"
+".\os.o"
+".\lab2.o"
+".\st7735.o"
+".\uart.o"
+".\osasm.o"
+".\systickints.o"
+".\adc.o"
+".\cr4_fft_64_stm32.o"
+".\pid_stm32.o"
+".\portf.o"
+--ro-base 0x00000000 --entry 0x00000000 --rw-base 0x20000000 --entry Reset_Handler --first __Vectors --strict --summary_stderr --info summarysizes --map --xref --callgraph --symbols
+--info sizes --info totals --info unused --info veneers
+--list ".\Lab2.map" -o .\Lab2.axf

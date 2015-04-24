@@ -1,0 +1,145 @@
+
+
+
+ARM Macro Assembler    Page 1 
+
+
+    1 00000000         
+    2 00000000                 EXPORT           OSCtxSw
+    3 00000000                 EXPORT           PendSV_Handler
+    4 00000000                 EXPORT           LaunchOS
+    5 00000000         
+    6 00000000         
+    7 00000000                 PRESERVE8
+    8 00000000                 THUMB
+    9 00000000                 AREA             CODE, CODE, READONLY
+   10 00000000                 IMPORT           RunPt
+   11 00000000                 IMPORT           NextRunPt
+   12 00000000         
+   13 00000000         OSCtxSw
+   14 00000000 4813            LDR              R0, =0xE000ED04 ; Trigger the P
+                                                            endSV exception (ca
+                                                            uses context switch
+                                                            )
+   15 00000002 F04F 5180       LDR              R1, =0x10000000
+   16 00000006 6001            STR              R1, [R0]
+   17 00000008 4770            BX               LR
+   18 0000000A         
+   19 0000000A         PendSV_Handler                       ; 1) R0-R3,R12,LR,P
+                                                            C,PSR on MSP
+   20 0000000A F3EF 8310       MRS              R3, PRIMASK
+   21 0000000E B672            CPSID            I           ; 2) Prevent interr
+                                                            upt during switch
+   22 00000010 E92D 0FF0       PUSH             {R4-R11}    ; 3) Save remaining
+                                                             regs r4-11
+   23 00000014 480F            LDR              R0, =RunPt  ; 4) R0=pointer to 
+                                                            RunPt, old thread
+   24 00000016 6801            LDR              R1, [R0]    ; R1 = RunPt
+   25 00000018 F8C1 D000       STR              SP, [R1]    ; 5) Save MSP into 
+                                                            TCB
+   26 0000001C 490E            LDR              R1, =NextRunPt ; 6) R1 = RunPt-
+                                                            >next
+   27 0000001E 6809            LDR              R1, [R1]
+   28 00000020 6001            STR              R1, [R0]    ; RunPt = R1
+   29 00000022 F8D1 D000       LDR              SP, [R1]    ; 7) new thread SP 
+                                                            in R2
+   30 00000026 E8BD 0FF0       POP              {R4-R11}
+   31 0000002A         ;ORR LR, LR, #0x04 ; 0xFFFFFFFD (return to thread PSP)
+   32 0000002A F383 8810       MSR              PRIMASK, R3 ; 9) run with inter
+                                                            rupts enabled
+   33 0000002E 4770            BX               LR          ; 10) restore R0-R3
+                                                            ,R12,LR,PC,PSR
+   34 00000030         
+   35 00000030         LaunchOS
+   36 00000030 4808            LDR              R0, =RunPt
+   37 00000032 6802            LDR              R2,[R0]
+   38 00000034 F8D2 D000       LDR              SP,[R2]
+   39 00000038 E8BD 0FF0       POP              {R4-R11}
+   40 0000003C BC0F            POP              {R0-R3}
+   41 0000003E F85D CB04       POP              {R12}
+   42 00000042 F85D EB04       POP              {LR}        ;Discarded the orig
+                                                            inal value
+   43 00000046 F85D EB04       POP              {LR}        ;Loads PC
+   44 0000004A BC02            POP              {R1}        ;Discard PSR
+   45 0000004C B662            CPSIE            I           ;Enable Interrupts
+   46 0000004E 4770            BX               LR
+
+
+
+ARM Macro Assembler    Page 2 
+
+
+   47 00000050         
+   48 00000050                 ALIGN
+   49 00000050         
+   50 00000050                 END
+              E000ED04 
+              00000000 
+              00000000 
+Command Line: --debug --xref --cpu=Cortex-M4 --apcs=interwork --depend=.\os.d -
+o.\os.o -IC:\Keil\ARM\RV31\INC -IC:\Keil\ARM\CMSIS\Include -IC:\Keil\ARM\Inc\Lu
+minary --predefine="__EVAL SETA 1" --list=.\os.lst OS.s
+
+
+
+ARM Macro Assembler    Page 1 Alphabetic symbol ordering
+Relocatable symbols
+
+CODE 00000000
+
+Symbol: CODE
+   Definitions
+      At line 9 in file OS.s
+   Uses
+      None
+Comment: CODE unused
+LaunchOS 00000030
+
+Symbol: LaunchOS
+   Definitions
+      At line 35 in file OS.s
+   Uses
+      At line 4 in file OS.s
+Comment: LaunchOS used once
+OSCtxSw 00000000
+
+Symbol: OSCtxSw
+   Definitions
+      At line 13 in file OS.s
+   Uses
+      At line 2 in file OS.s
+Comment: OSCtxSw used once
+PendSV_Handler 0000000A
+
+Symbol: PendSV_Handler
+   Definitions
+      At line 19 in file OS.s
+   Uses
+      At line 3 in file OS.s
+Comment: PendSV_Handler used once
+4 symbols
+
+
+
+ARM Macro Assembler    Page 1 Alphabetic symbol ordering
+External symbols
+
+NextRunPt 00000000
+
+Symbol: NextRunPt
+   Definitions
+      At line 11 in file OS.s
+   Uses
+      At line 26 in file OS.s
+Comment: NextRunPt used once
+RunPt 00000000
+
+Symbol: RunPt
+   Definitions
+      At line 10 in file OS.s
+   Uses
+      At line 23 in file OS.s
+      At line 36 in file OS.s
+
+2 symbols
+339 symbols in table
