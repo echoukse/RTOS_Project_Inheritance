@@ -50,13 +50,13 @@ typedef struct HGlist{
 
 /*Hourglass*/
 struct  Hourglass{
-	HGlistType *head; //List of the threads inside the CS of this hourglass
-	TCBType *BlockedList;  //head of the blocked list on this hourglass - list of readers
-	TCBType *WaitEmptyList; //head of threads waiting for the CS to empty. But they dont want to get into the CS
+	HGlistType *InsideList; //List of the threads inside the CS of this hourglass
+	TCBType *WaitNonExclusiveList;  //head of the blocked list on this hourglass - list of readers
+	TCBType *WaitBarrierList; //head of threads waiting for the CS to empty. But they dont want to get into the CS
 	TCBType *WaitExclusiveList; //head of threads waiting for the CS to empty, wanting to get into the CS alone
-	int free; //Are there any threads in the CS represented by the hourglass
-	int blocked; //If an external thread has inverted the hourglass, this is 1. Now no new threads can be registered
-	int priority; //Group priority of the threads in CS, -1 if no priority inheritance happened
+	int free; //Are there any threads in the CS
+	int blocked; //Exclusive thread is inside the critical section
+	int priority; //Priority of the lowest thread inside the CS
 	struct Hourglass *next_HG; // so that we can make a list of all HGs held by a Thread	
 };
 
@@ -350,32 +350,52 @@ unsigned long OS_MsTime(void);
 // In Lab 3, you should implement the user-defined TimeSlice field
 // It is ok to limit the range of theTimeSlice to match the 24-bit SysTick
 void OS_Launch(unsigned long theTimeSlice);
+
 /*Hourglass*/
 void OS_HGInit( HGType *lock, int val);
 
-/*Hourglass*/
-//Put the thread in BlockedList if block=1
-void OS_HGreg( HGType *lock, int TID);
+/*Hourglass NOT AN API*/
+//Put the thread in the InsideList if blocked = 0, 
+//else if the priority is greater than HG priority, let it go in the inside list
+//if the priority of this thread is lower, put it in NonExclusiveWaitList
+void OS_HGreg( HGType *lock);
+
+/*Hourglass NOT AN API*/
+//Get back the priority it should have, based on the other locks it holds
+//if this was the last thread in CS, 
+//wake either the threads in NonExclusive list with higher priorities than writer/barrier, or
+//Exclusivewaitlist if there is anybody
+//All the threads in Barrier list
+void OS_HGDereg( HGType *lock);
 
 /*Hourglass*/
-void OS_HGDereg( HGType *lock, int TID);
-
-/*Hourglass*/
+//This is a wait_exclusive
 //sets the HG->block to 1 and makes this thread wait till the HG->free is 1. 
-//No new thread will be allowed to register till this thread leaves the CS.
-//If HG is already blocked, puts this thread in WaitList
-void OS_HGWait( HGType *lock, int TID); 
+//No new thread with a lower priority will be allowed to register till this thread leaves the CS.
+//If HG is already blocked, puts this thread in WaitExclusiveList
+void OS_HGWait( HGType *lock); 
+
 
 /*Hourglass*/
-//If there are other threads in the WaitExclusiveList, puts one of those in CS
-//Else sets the HG->blocked = 0
-void OS_HGSignal( HGType *lock, int TID); 
+//Called when we dont care how many threads are inside CS.
+//Called by readers . If no blocked, go into CS, Insidelist
+//Else, if lower priority, go into the NonExclusiveWaitlist
+void OS_HGWaitNonExclusive( HGType *lock); 
+
 
 /*Hourglass*/
-//Just makes the thread wait in the WaitEmptyList till the CS is empty. 
-//Priority inheritance applies.
+//Get back the priority it should have, based on the other locks it holds
+//if this was the last thread in CS, 
+//wake either the threads in NonExclusive list with higher priorities than writer/barrier, or
+//Exclusivewaitlist if there is anybody
+//All the threads in Barrier list
+void OS_HGSignal( HGType *lock); 
+
+/*Hourglass*/
+//Calls signal implicitly.
+//Just makes the thread wait in the WaitBarrierList till the CS is empty. 
 //Once the CS is empty, the thread is let go. Shifted to RunList.
-void OS_HGBlock( HGType *lock, int TID); 
+void OS_HGSyncThreads( HGType *lock); 
 
 void Jitter_Calculate(int num);
 

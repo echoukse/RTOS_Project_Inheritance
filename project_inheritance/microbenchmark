@@ -1,0 +1,29 @@
+//reader - writer
+
+OS_HGInit(&lock,1);
+
+Reader: OS_HGWaitNonExclusive(&lock);
+
+OS_HGSignal(&lock);
+
+
+Write: OS_HGWait(&lock);
+OS_HGSignal(&lock);
+
+
+
+//Barrier
+
+OS_HGInit(&lock, 0 );
+OS_Addthread(....., &lock)
+OS_Addthread(....., &lock)
+OS_Addthread(....., &lock)
+
+OS_Syncthreads(&lock);
+
+
+//Normal binary semaphore
+OS_HGInit(&lock,0/1)
+OS_HGWait(&lock)
+OS_HGSignal(&lock)
+
