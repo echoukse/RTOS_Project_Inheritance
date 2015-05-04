@@ -260,7 +260,7 @@ void writer(void){
 	}
 }
 
-int main(void){
+int HGTest3main(void){
 	OS_Init();  
   PortF_Init();
 	Timer2_Init();
@@ -483,7 +483,6 @@ void test6thread_3(void){  //waiting for thread4
 		LEDS = RED+BLUE;
 		OS_Sleep(5);
 		testcount6_3++;
-		OS_HGSyncThreads(&test6_HGbarrier2);
 		OS_HGSyncThreads(&test6_HGbarrier1);
 		OS_Sleep(3);
 	}
@@ -491,11 +490,11 @@ void test6thread_3(void){  //waiting for thread4
 void test6thread_4(void){
 	while(1){
 		testcount6_4++;
-		OS_HGSyncThreads(&test6_HGbarrier2);
+		OS_HGSyncThreads(&test6_HGbarrier1);
 		LEDS = GREEN;
 		OS_Sleep(5);
 		testcount6_4++;
-		OS_HGSyncThreads(&test6_HGbarrier2);
+		OS_HGSyncThreads(&test6_HGbarrier1);
 		OS_Sleep(3);
 	  }
   }
@@ -503,11 +502,11 @@ void test6thread_4(void){
 	void test6thread_5(void){  //waiting for thread4
 	while(1){
 		testcount6_5++;
-		OS_HGSyncThreads(&test6_HGbarrier2);
+		OS_HGSyncThreads(&test6_HGbarrier1);
 		LEDS = GREEN+RED;
 		OS_Sleep(5);
 		testcount6_5++;
-		OS_HGSyncThreads(&test6_HGbarrier2);
+		OS_HGSyncThreads(&test6_HGbarrier1);
 		OS_Sleep(3);
 	}
 }
@@ -518,7 +517,7 @@ void test6thread_6(void){
 	  }
   }
 
-int HGtestmain6(void){
+int main(void){
 	OS_Init();  
   PortF_Init();
 	Timer2_Init();
@@ -529,11 +528,11 @@ int HGtestmain6(void){
   
   NumCreated = 0 ;
 	 
-	NumCreated += OS_AddThread(&test6thread_1,128,1);
-	NumCreated += OS_AddThread(&test6thread_2,128,3);
-  NumCreated += OS_AddThread(&test6thread_3,128,4); 
-  NumCreated += OS_AddThread(&test6thread_4,128,5);
-	NumCreated += OS_AddThread(&test6thread_5,128,6); 
+	NumCreated += OS_AddThread_with_HGBarrier(&test6thread_1,128,1,&test6_HGbarrier1);
+	NumCreated += OS_AddThread_with_HGBarrier(&test6thread_2,128,3,&test6_HGbarrier1);
+  NumCreated += OS_AddThread_with_HGBarrier(&test6thread_3,128,4,&test6_HGbarrier1); 
+  NumCreated += OS_AddThread_with_HGBarrier(&test6thread_4,128,5,&test6_HGbarrier1);
+	NumCreated += OS_AddThread_with_HGBarrier(&test6thread_5,128,6,&test6_HGbarrier1); 
   NumCreated += OS_AddThread(&test6thread_6,128,2);
   OS_Launch(TIME_1MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes

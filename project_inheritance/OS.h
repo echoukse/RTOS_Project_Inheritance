@@ -158,6 +158,9 @@ void OS_Block_bSignal(Sema4Type *semaPt);
 int OS_AddThread(void(*task)(void), 
    unsigned long stackSize, unsigned long priority);
 
+
+int OS_AddThread_with_HGBarrier(void(*task)(), unsigned long stackSize, unsigned long priority, HGType *lock);
+
 //******** OS_AddThread *************** 
 // add a foregound thread to the scheduler
 // Inputs: pointer to a void/void foreground task
@@ -358,7 +361,7 @@ void OS_HGInit( HGType *lock, int val);
 //Put the thread in the InsideList if blocked = 0, 
 //else if the priority is greater than HG priority, let it go in the inside list
 //if the priority of this thread is lower, put it in NonExclusiveWaitList
-void OS_HGreg( HGType *lock);
+void OS_HGreg( HGType *lock, int TID);
 
 /*Hourglass NOT AN API*/
 //Get back the priority it should have, based on the other locks it holds

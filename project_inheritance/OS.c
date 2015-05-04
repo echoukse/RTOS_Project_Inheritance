@@ -360,18 +360,32 @@ unsigned long findID(){
 	return 0;
 }
 
+//This function elevates the priority of all the threads that are 
+//currently inside the CS(InsideList).
+
 TCBType * Change_priority(TCBType *Task, HGType * lock, int new_priority ){
 	int done =1;
 	HGlistType *temp = lock->InsideList; 
 	while(temp) // iterate over all threads currently inside CS
 		{
 			if(TCBs[temp->TID].priority > new_priority)
-				{ 
-					do{
-						Task = DeleteTask(RunHead, &TCBs[temp->TID], 0,&done);
-						}while(done==0);
-					TCBs[temp->TID].priority =  new_priority;      // priority inheritance
-					Task = Insert_priorityTask(Task, &TCBs[temp->TID]);
+				{
+          if((TCBs[temp->TID].blocked == -1) && (TCBs[temp->TID].sleep == 0)){
+						do{
+							Task = DeleteTask(RunHead, &TCBs[temp->TID], 0,&done);
+							}while(done==0);
+						TCBs[temp->TID].priority =  new_priority;      // priority inheritance
+						Task = Insert_priorityTask(Task, &TCBs[temp->TID]);
+					}
+					else{
+						//If the thread is blocked or sleeping, just update the priority first.
+						TCBs[temp->TID].priority =  new_priority;
+						/*//If blocked on an HG, update the priorities in the waitlist and the 
+						//Inside list of that HG.
+						if(TCBs[temp->TID].blocked != -1){
+							
+						}*/
+					}
 				}
 			temp = temp->next;
 		}	
@@ -382,7 +396,7 @@ void initTCB(TCBType *myTCB, unsigned long myID, unsigned long priority){
 	myTCB->ID = myID;
 	myTCB->priority = priority;
 	myTCB->actual_priority = priority;
-	myTCB->blocked = 0;
+	myTCB->blocked = -1;
 	myTCB->sleep = 0;
 	myTCB->sp = &Stack[myID][StackSize - 16];
 	Stack[myID][StackSize-1] = 0x01000000; // Thumb bit
@@ -737,7 +751,7 @@ int OS_AddThread_with_HGBarrier(void(*task)(), unsigned long stackSize, unsigned
 	RunHead= Insert_priorityTask(RunHead, myTCB);
 	Current_thread_count++;
 	//Register with the lock
-	OS_HGreg(lock);
+	OS_HGreg(lock, myID);
 	
 	if(OS_Launched)
 	{
@@ -1108,15 +1122,15 @@ void OS_HGInit( HGType *lock, int val){
 }
 
 /*Hourglass*/
-void OS_HGreg( HGType *lock){
+void OS_HGreg( HGType *lock, int TID){
 	long status = StartCritical();
 	// This thread just registers, so no priority inheritance done here.
 	//First get a new Node initialised
-  int TID = RunPt->ID;
 	HGlistType *newnode ;
 	newnode = &(HG_Threads[lock->HG_ID][TID]);//(HGlistType*)malloc(sizeof(HGlistType));
 	newnode->TID = TID;
 	RunPt->HGptr = InsertHGs(lock,RunPt->HGptr);
+	RunPt->blocked = -1; //Not blocked anymore
 	
 	//Add it to the list of registered ones 
 	//In ascending order of priorities
@@ -1264,7 +1278,9 @@ void OS_HGWaitNonExclusive( HGType *lock){
 	int TID = RunPt->ID;
   lock->free = 0;
 	//If there are readers in the CS, get added to the waiting list
-	if(lock->blocked){  //lock acquired by an  exclusive task 
+	if((lock->blocked) || ((lock->WaitExclusiveList!=NULL) && (RunPt->priority > lock->WaitExclusiveList->priority)) \
+		|| ((lock->WaitBarrierList!=NULL) && (RunPt->priority > lock->WaitBarrierList->priority))){  //lock acquired by an  exclusive task 
+		RunPt->blocked = lock->HG_ID;
 		//elevate priority if necessary
 	 if(lock->InsideList)	
 			{ 
@@ -1293,7 +1309,7 @@ void OS_HGWaitNonExclusive( HGType *lock){
 	}
 	else	
 		lock->priority = RunPt->priority;
-	OS_HGreg(lock);//the thread enters the CS so gets registered
+	OS_HGreg(lock, RunPt->ID);//the thread enters the CS so gets registered
 	EndCritical(sr); //No Readers in the CS, go ahead
 
 }
@@ -1303,6 +1319,7 @@ void OS_HGWait( HGType *lock){
 	int TID = RunPt->ID;
 	//If there are readers in the CS, get added to the waiting list
 	if((lock->free == 0) || (lock->InsideList != NULL)){  //lock already acquired
+		RunPt->blocked = lock->HG_ID;
 		//elevate priority if necessary
 		if(lock->priority > RunPt->priority) //if registered threads holder has lower priority than blocked task 
 		{
@@ -1321,7 +1338,7 @@ void OS_HGWait( HGType *lock){
 	}
   //Obtained the lock
 	lock->free = 0;
-  OS_HGreg(lock);	
+  OS_HGreg(lock, RunPt->ID);	
 	lock->blocked = 1;   
 	lock->priority = TCBs[TID].priority;
 	EndCritical(sr); 
@@ -1350,16 +1367,20 @@ void OS_HGSyncThreads(HGType *lock){
   OS_HGDereg(lock);
 	TCBType *temp_TCBptr;
 	if(lock->free){ //This was the last thread to call sync threads, wake every one
+		temp_TCBptr = lock->WaitBarrierList;
 		while(temp_TCBptr) {
 			int done = 1;
 			do{
 				lock->WaitBarrierList = DeleteTask(lock->WaitBarrierList, temp_TCBptr, 0, &done);
 				}while(done==0);
 			RunHead = Insert_priorityTask(RunHead, temp_TCBptr); 
+			OS_HGreg(lock, temp_TCBptr->ID); // Add back all the threads to the InsideList to reuse the barrier lock
 			temp_TCBptr = lock->WaitBarrierList;
 		}
+		OS_HGreg(lock, RunPt->ID); //Add this task to the InsideList too, for reuse
+		lock->free = 0; // Set the lock not free, for reuse
 	}
-	else{ //Add it to the BarrierList
+	else{ //Need to wait for other threads to reach barrier. Add this thread to the BarrierList
 		//sequence to add the thread to barrier wait list 
 		if(lock->priority > RunPt->priority) //if waiting thread has higher priority than still running tasks 
 		{
@@ -1404,8 +1425,6 @@ void SysTick_Handler(void){
 		is_kill = 0;
 		NewPt = RunHead;
 	}
-	//TODO: if is block
-	
 	else{
 		if(!is_sleep && (RunHead->priority == RunPt->priority)  && is_in_list(RunHead,RunPt)){ //current thread is at highest priority, give chance to next thread in this priority
 			if(RunPt->Next->priority == RunHead->priority){  // There is another thread at the same priority , give it chance
