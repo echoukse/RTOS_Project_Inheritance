@@ -38,6 +38,8 @@ unsigned int Stack[NumThreads+1][StackSize];
 
 TCBType TCBs[NumThreads+1];
 
+HGlistType HG_Threads[HG_Number][NumThreads];
+
 unsigned long unique_IDs[NumThreads+1];
 
 EventType myevents[100];
@@ -53,9 +55,6 @@ unsigned long *FIFO_end;
 Sema4Type FIFO_mutex;
 Sema4Type FIFO_data_avail;
 Sema4Type FIFO_free;
-
-Sema4Type mutex1;
-Sema4Type mutex2;
 
 int OS_Launched=0;
 int Current_thread_count = 0;
@@ -163,7 +162,7 @@ HGlistType * InsertHGlist(HGlistType *head, HGlistType *Node){
 		Node->next = NULL;
                 //head->free = 0;
 		return head;
-	}
+	} 
 	temp1 = temp = head;
    
   while((TCBs[temp->TID].priority > TCBs[Node->TID].priority) && (temp->next)) 
@@ -172,6 +171,18 @@ HGlistType * InsertHGlist(HGlistType *head, HGlistType *Node){
 		temp = temp->next;
 	}	
 	
+	if(head == temp)
+		{
+		  if((TCBs[head->TID].priority < TCBs[Node->TID].priority))
+			{
+				Node->next = head;
+			   head = Node;
+			   return head;
+			}
+      else
+        head->next = Node;
+        return head;			
+		}
 	if(TCBs[temp->TID].priority <= TCBs[Node->TID].priority) //last TCB in the list, Add Node between temp and head
 	  {
 			temp1->next = Node;
@@ -213,7 +224,7 @@ HGType * InsertHGs(HGType *head, HGType *Node){
 		return head;
 	}
 	temp = head;
-	while(!temp->next_HG)
+	while(temp->next_HG)
 	  temp = temp->next_HG;
 	temp->next_HG = Node;
 	Node->next_HG = NULL;
@@ -228,7 +239,7 @@ Sema4Type * InsertSema4(Sema4Type *head, Sema4Type *Node){
 		return head;
 	}
 	temp = head;
-	while(!temp->next_sema4)
+	while(temp->next_sema4)
 	  temp = temp->next_sema4;
 	temp->next_sema4 = Node;
 	Node->next_sema4 = NULL;
@@ -631,9 +642,9 @@ void OS_Block_bSignal(Sema4Type *semaPt){
 	sema4_iter = RunPt->Semaptr;
 	// routine to restore the priority
 	// priority = original priority or blocked thread priority whichever is higher
-	while(!sema4_iter)  //if tasks holds other sema4s //ASK: What is this? why is it !sema4?
+	while(sema4_iter)  //if tasks holds other sema4s //ASK: What is this? why is it !sema4?
 	{
-		if(!sema4_iter->BlockedList) //if sema4 has other tasks blocked on it
+		if(sema4_iter->BlockedList) //if sema4 has other tasks blocked on it
 		{	
      if( highest_priority > sema4_iter->BlockedList->priority ) //only work if Blocked list is according to priority 
          highest_priority = sema4_iter->BlockedList->priority;
@@ -682,6 +693,7 @@ int OS_AddThread(void(*task)(), unsigned long stackSize, unsigned long priority)
 	long sr=StartCritical();	
 	unsigned long myID = findID();
 	if(myID==0){
+		LEDS = RED+GREEN; //Oh no, ran out! 
 		EndCritical(sr);
 		return 0;
 	}
@@ -1080,10 +1092,15 @@ void OS_Launch(unsigned long theTimeSlice){
 	LaunchOS();
 }
 
+int Curr_HG_Num = 0;
 /*Hourglass*/
 void OS_HGInit( HGType *lock, int val){
+	lock->HG_ID = Curr_HG_Num;
+	Curr_HG_Num++;
 	lock->free = val;
 	lock->InsideList = NULL;
+	lock->next_HG = NULL;
+	lock->WaitNonExclusiveList = NULL;
 	lock->WaitBarrierList = NULL;
 	lock->WaitExclusiveList = NULL;
 	lock->blocked = 0;
@@ -1097,7 +1114,7 @@ void OS_HGreg( HGType *lock){
 	//First get a new Node initialised
   int TID = RunPt->ID;
 	HGlistType *newnode ;
-	newnode = (HGlistType*)malloc(sizeof(HGlistType));
+	newnode = &(HG_Threads[lock->HG_ID][TID]);//(HGlistType*)malloc(sizeof(HGlistType));
 	newnode->TID = TID;
 	RunPt->HGptr = InsertHGs(lock,RunPt->HGptr);
 	
@@ -1121,8 +1138,11 @@ void OS_HGDereg( HGType *lock){
 	
 	RunPt->HGptr = DeleteHGs(RunPt->HGptr,lock); //delete the HG  from the list of HGs held by this thread
   if(RunPt->priority == lock->priority)
-		{
-			lock->priority = TCBs[lock->InsideList->TID].priority;
+		{  
+			if(lock->InsideList == NULL)
+				lock->priority = 7; //Lowest priority
+			else
+				lock->priority = TCBs[lock->InsideList->TID].priority;
 		}      
   
   int highest_priority = RunPt->actual_priority;		
@@ -1146,10 +1166,11 @@ void OS_HGDereg( HGType *lock){
 	while(HG_iter)
 	{
 		HGlistType *newnode ;
-	  newnode = (HGlistType*)malloc(sizeof(HGlistType));
+	  newnode = &(HG_Threads[HG_iter->HG_ID][TID]);//(HGlistType*)malloc(sizeof(HGlistType));
 	  newnode->TID = TID;
 		HG_iter->InsideList = DeleteHGlistType(HG_iter->InsideList,TID); 
 		HG_iter->InsideList = InsertHGlist(HG_iter->InsideList, newnode); 
+		HG_iter = HG_iter->next_HG;
 	}
 
   // In RunList, Add the same task back with updated priority
@@ -1196,7 +1217,7 @@ void OS_HGDereg( HGType *lock){
 							OS_Suspend();
 						}
 	       }
-			else if (lock->WaitExclusiveList->priority) // only exclusive thread is blocked
+			else if (lock->WaitExclusiveList) // only exclusive thread is blocked
 				{
 					temp_TCBptr = lock->WaitExclusiveList; 
 					//wake highest priority exclusive thread
@@ -1208,7 +1229,7 @@ void OS_HGDereg( HGType *lock){
 					EndCritical(status);
 					OS_Suspend(); 
 				}
-				else if(lock->WaitNonExclusiveList->priority) //only non-exclusive threads are blocked
+				else if(lock->WaitNonExclusiveList) //only non-exclusive threads are blocked
 					{
 						temp_TCBptr = lock->WaitNonExclusiveList; 
 						//wake all non-exclusive threads which have higher priority than the head of exclusive thread
@@ -1223,7 +1244,9 @@ void OS_HGDereg( HGType *lock){
 						EndCritical(status);
 						OS_Suspend();
 					}					
-				}
+		EndCritical(status);
+		OS_Suspend();
+	}
 	else{ // still threads inside CS
 		EndCritical(status);
 		OS_Suspend(); //priority has changed so context switch
@@ -1243,11 +1266,16 @@ void OS_HGWaitNonExclusive( HGType *lock){
 	//If there are readers in the CS, get added to the waiting list
 	if(lock->blocked){  //lock acquired by an  exclusive task 
 		//elevate priority if necessary
-		if(lock->priority > RunPt->priority) //if this thread has a higher priority than exclusive task in CS
-		{
-			lock->priority = RunPt->priority;
-			Change_priority(RunHead,lock,TCBs[TID].priority);
-		}
+	 if(lock->InsideList)	
+			{ 
+				if(lock->priority > RunPt->priority) //if this thread has a higher priority than exclusive task in CS
+				{
+					lock->priority = RunPt->priority;
+					Change_priority(RunHead,lock,TCBs[TID].priority);
+				}
+			}
+	 else 
+      lock->priority = RunPt->priority; 			
 		//sequence to add the thread to Non exclusive blocked list 
 		int done =1;
 		do{
@@ -1257,10 +1285,15 @@ void OS_HGWaitNonExclusive( HGType *lock){
 		EndCritical(sr);
 		OS_Suspend();
 	}
-  // obtained lock 
-	OS_HGreg(lock);//the thread enters the CS so gets registered 
-	if(lock->priority < TCBs[TID].priority)  
-   	  lock->priority = TCBs[TID].priority;
+  // obtained lock  
+	if(lock->InsideList)	
+	{
+		if(lock->priority < TCBs[TID].priority)  
+			lock->priority = TCBs[TID].priority;
+	}
+	else	
+		lock->priority = RunPt->priority;
+	OS_HGreg(lock);//the thread enters the CS so gets registered
 	EndCritical(sr); //No Readers in the CS, go ahead
 
 }
@@ -1268,9 +1301,8 @@ void OS_HGWaitNonExclusive( HGType *lock){
 void OS_HGWait( HGType *lock){
 	long sr = StartCritical();
 	int TID = RunPt->ID;
-  lock->free = 0;
 	//If there are readers in the CS, get added to the waiting list
-	if(lock->InsideList != NULL){  //lock already acquired
+	if((lock->free == 0) || (lock->InsideList != NULL)){  //lock already acquired
 		//elevate priority if necessary
 		if(lock->priority > RunPt->priority) //if registered threads holder has lower priority than blocked task 
 		{
@@ -1288,11 +1320,12 @@ void OS_HGWait( HGType *lock){
 		OS_Suspend();
 	}
   //Obtained the lock
+	lock->free = 0;
   OS_HGreg(lock);	
 	lock->blocked = 1;   
 	lock->priority = TCBs[TID].priority;
 	EndCritical(sr); 
-	   
+	OS_Suspend();
 }
 
 
@@ -1390,10 +1423,6 @@ void SysTick_Handler(void){
 			OldPt = RunPt;
 			NewPt = RunHead;
 		}
-	}
-	if(curr_event<100){
-	  myevents[curr_event].ID = NewPt->ID;
-	  myevents[curr_event++].time = (Timer2Rollover*TIME_2MS+(TIME_2MS-OS_Time()));
 	}
 	NVIC_INT_CTRL_R = 0x10000000; // Trigger PendSV
 	EndCritical(sr);

@@ -17,8 +17,9 @@
 #define TIME_500US  (TIME_1MS/2)  
 #define TIME_250US  (TIME_1MS/5)  
 
-#define NumThreads 50
+#define NumThreads 10
 #define StackSize 128
+#define HG_Number 5 // Allow upto 5 HGs
 
 #define MAX_FIFO_SIZE 256
 
@@ -50,6 +51,7 @@ typedef struct HGlist{
 
 /*Hourglass*/
 struct  Hourglass{
+	int HG_ID;
 	HGlistType *InsideList; //List of the threads inside the CS of this hourglass
 	TCBType *WaitNonExclusiveList;  //head of the blocked list on this hourglass - list of readers
 	TCBType *WaitBarrierList; //head of threads waiting for the CS to empty. But they dont want to get into the CS
@@ -89,8 +91,6 @@ extern unsigned long *FIFO_end;
 extern  Sema4Type FIFO_mutex;
 extern  Sema4Type FIFO_data_avail;
 extern  Sema4Type FIFO_free;
-extern  Sema4Type mutex1;
-extern  Sema4Type mutex2;
 // ******** OS_Init ************
 // initialize operating system, disable interrupts until OS_Launch
 // initialize OS controlled I/O: serial, ADC, systick, LaunchPad I/O and timers 
