@@ -30,6 +30,7 @@ typedef  struct  os_tcb TCBType;
 
 /*Hourglass*/
 typedef  struct  Hourglass HGType;
+typedef HGType * HGPType;
 
 struct os_tcb{		
 	unsigned int *sp;
@@ -57,7 +58,7 @@ struct  Hourglass{
 	TCBType *WaitBarrierList; //head of threads waiting for the CS to empty. But they dont want to get into the CS
 	TCBType *WaitExclusiveList; //head of threads waiting for the CS to empty, wanting to get into the CS alone
 	int free; //Are there any threads in the CS
-	int blocked; //Exclusive thread is inside the critical section
+	int ExclusiveRunning; //Exclusive thread is inside the critical section
 	int priority; //Priority of the lowest thread inside the CS
 	struct Hourglass *next_HG; // so that we can make a list of all HGs held by a Thread	
 };

@@ -39,7 +39,7 @@ unsigned int Stack[NumThreads+1][StackSize];
 TCBType TCBs[NumThreads+1];
 
 HGlistType HG_Threads[HG_Number][NumThreads];
-
+HGType *HGs[HG_Number];
 unsigned long unique_IDs[NumThreads+1];
 
 EventType myevents[100];
@@ -363,7 +363,7 @@ unsigned long findID(){
 //This function elevates the priority of all the threads that are 
 //currently inside the CS(InsideList).
 
-TCBType * Change_priority(TCBType *Task, HGType * lock, int new_priority ){
+TCBType * Promote_priority(TCBType *Task, HGType * lock, int new_priority ){
 	int done =1;
 	HGlistType *temp = lock->InsideList; 
 	while(temp) // iterate over all threads currently inside CS
@@ -380,11 +380,35 @@ TCBType * Change_priority(TCBType *Task, HGType * lock, int new_priority ){
 					else{
 						//If the thread is blocked or sleeping, just update the priority first.
 						TCBs[temp->TID].priority =  new_priority;
-						/*//If blocked on an HG, update the priorities in the waitlist and the 
+						//If blocked on an HG, update the priorities in the waitlist and the 
 						//Inside list of that HG.
 						if(TCBs[temp->TID].blocked != -1){
+							//Update/elevate the priorities of the tasks in the Inside list
+							Promote_priority(Task, HGs[TCBs[temp->TID].blocked], new_priority);
 							
-						}*/
+							//How to figure if it is waiting in NonExclusiveList, or Exclusive, or Barrier??
+							//Whichever list it is in, reorder it
+							if(is_in_list(HGs[TCBs[temp->TID].blocked]->WaitExclusiveList, &TCBs[temp->TID])){
+								int done = 0;
+								while(!done){
+									HGs[TCBs[temp->TID].blocked]->WaitExclusiveList = \
+									DeleteTask(HGs[TCBs[temp->TID].blocked]->WaitExclusiveList, &TCBs[temp->TID], 0, &done);
+								}
+								HGs[TCBs[temp->TID].blocked]->WaitExclusiveList = \
+								Insert_priorityTask(HGs[TCBs[temp->TID].blocked]->WaitExclusiveList, &TCBs[temp->TID]);
+							}
+							
+							else if (is_in_list(HGs[TCBs[temp->TID].blocked]->WaitNonExclusiveList, &TCBs[temp->TID])){
+								int done = 0;
+								while(!done){
+									HGs[TCBs[temp->TID].blocked]->WaitNonExclusiveList = \
+									DeleteTask(HGs[TCBs[temp->TID].blocked]->WaitNonExclusiveList, &TCBs[temp->TID], 0, &done);
+								}
+								HGs[TCBs[temp->TID].blocked]->WaitNonExclusiveList = \
+								Insert_priorityTask(HGs[TCBs[temp->TID].blocked]->WaitNonExclusiveList, &TCBs[temp->TID]);
+							}
+							//else do nothing, since the Barrier wait list doesn't need to be in order of priority
+						}
 					}
 				}
 			temp = temp->next;
@@ -1109,6 +1133,7 @@ void OS_Launch(unsigned long theTimeSlice){
 int Curr_HG_Num = 0;
 /*Hourglass*/
 void OS_HGInit( HGType *lock, int val){
+	HGs[Curr_HG_Num] = lock;
 	lock->HG_ID = Curr_HG_Num;
 	Curr_HG_Num++;
 	lock->free = val;
@@ -1117,7 +1142,7 @@ void OS_HGInit( HGType *lock, int val){
 	lock->WaitNonExclusiveList = NULL;
 	lock->WaitBarrierList = NULL;
 	lock->WaitExclusiveList = NULL;
-	lock->blocked = 0;
+	lock->ExclusiveRunning = 0;
 	lock->priority = 7; //lowest priority
 }
 
@@ -1165,7 +1190,8 @@ void OS_HGDereg( HGType *lock){
 	while(HG_iter)  //if tasks holds other HGs
 	{
 		//Compare only with the blocked HGs. HG->priority holds the base priority for a blocked HG
-		if((HG_iter->blocked) && (highest_priority > HG_iter->priority))
+		//ESHA: TODO: update to check only elevated HGs
+		if((HG_iter->ExclusiveRunning) && (highest_priority > HG_iter->priority))
 		{
 			highest_priority = HG_iter->priority;
 		}
@@ -1174,7 +1200,7 @@ void OS_HGDereg( HGType *lock){
 	
 	RunPt->priority = highest_priority;  // Set the priority
 	
-	//Now, reorder the HG->InsdeLists of all the HGs held, with new priority
+	//Now, reorder the HG->InsideLists of all the HGs held, with new priority
 	
 	HG_iter = RunPt->HGptr;
 	while(HG_iter)
@@ -1196,8 +1222,8 @@ void OS_HGDereg( HGType *lock){
         
   if(lock->InsideList == NULL){
 		lock->free = 1;
-		if((lock->WaitBarrierList == NULL) && (lock->WaitExclusiveList == NULL))
-			lock->blocked = 0;
+		if(lock->WaitExclusiveList == NULL)
+			lock->ExclusiveRunning = 0;
 		
 		//Wake up threads if needed
 		
@@ -1277,8 +1303,8 @@ void OS_HGWaitNonExclusive( HGType *lock){
 	long sr = StartCritical();
 	int TID = RunPt->ID;
   lock->free = 0;
-	//If there are readers in the CS, get added to the waiting list
-	if((lock->blocked) || ((lock->WaitExclusiveList!=NULL) && (RunPt->priority > lock->WaitExclusiveList->priority)) \
+	//If there are exclusive ones in the CS, or higher priority exclusive waiting, get added to the waiting list
+	if((lock->ExclusiveRunning) || ((lock->WaitExclusiveList!=NULL) && (RunPt->priority > lock->WaitExclusiveList->priority)) \
 		|| ((lock->WaitBarrierList!=NULL) && (RunPt->priority > lock->WaitBarrierList->priority))){  //lock acquired by an  exclusive task 
 		RunPt->blocked = lock->HG_ID;
 		//elevate priority if necessary
@@ -1287,7 +1313,7 @@ void OS_HGWaitNonExclusive( HGType *lock){
 				if(lock->priority > RunPt->priority) //if this thread has a higher priority than exclusive task in CS
 				{
 					lock->priority = RunPt->priority;
-					Change_priority(RunHead,lock,TCBs[TID].priority);
+					Promote_priority(RunHead,lock,TCBs[TID].priority);
 				}
 			}
 	 else 
@@ -1324,7 +1350,7 @@ void OS_HGWait( HGType *lock){
 		if(lock->priority > RunPt->priority) //if registered threads holder has lower priority than blocked task 
 		{
 			lock->priority = RunPt->priority;
-		  Change_priority(RunHead,lock,TCBs[TID].priority);
+		  Promote_priority(RunHead,lock,TCBs[TID].priority);
 		}
 		//sequence to add the thread to exclusive blocked list 
 		int done =1;
@@ -1339,7 +1365,7 @@ void OS_HGWait( HGType *lock){
   //Obtained the lock
 	lock->free = 0;
   OS_HGreg(lock, RunPt->ID);	
-	lock->blocked = 1;   
+	lock->ExclusiveRunning = 1;   
 	lock->priority = TCBs[TID].priority;
 	EndCritical(sr); 
 	OS_Suspend();
@@ -1385,7 +1411,7 @@ void OS_HGSyncThreads(HGType *lock){
 		if(lock->priority > RunPt->priority) //if waiting thread has higher priority than still running tasks 
 		{
 			lock->priority = RunPt->priority;
-		  Change_priority(RunHead,lock,TCBs[TID].priority);
+		  Promote_priority(RunHead,lock,TCBs[TID].priority);
 		}
 		int done =1;
 		do{
