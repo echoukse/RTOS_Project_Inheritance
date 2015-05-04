@@ -279,3 +279,262 @@ int main(void){
   OS_Launch(TIME_2MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes
 }
+
+
+//Domino elevation of priority
+int testcount4_1 =0;
+int testcount4_2 =0;
+int testcount4_3 =0;
+int testcount4_4 =0;
+HGType test4_HG1,test4_HG2,test4_HG3;
+void test4thread_1(void){
+	while(1){
+		OS_Sleep(8);
+		OS_HGWait(&test4_HG3);
+		
+		testcount4_1++;
+		LEDS = RED;
+		OS_Sleep(3);
+		OS_HGSignal(&test4_HG3);
+		OS_Sleep(3);
+	}
+}
+
+void test4thread_2(void){ //waiting for thread3
+	while(1){
+		OS_Sleep(4);
+		OS_HGWait(&test4_HG3);
+		OS_HGWait(&test4_HG2);
+		testcount4_2++;
+		LEDS = BLUE;
+		OS_Sleep(2);
+		OS_HGSignal(&test4_HG2);
+		OS_HGSignal(&test4_HG3);
+		OS_Sleep(2);
+	}
+}
+void test4thread_3(void){  //waiting for thread4
+	while(1){
+		OS_Sleep(1);
+		OS_HGWait(&test4_HG2);
+		OS_HGWait(&test4_HG1);
+		testcount4_3++;
+		LEDS = GREEN;
+		OS_Sleep(1);
+		OS_HGSignal(&test4_HG1);
+		OS_HGSignal(&test4_HG2);
+	}
+}
+void test4thread_4(void){
+	while(1){
+		OS_HGWait(&test4_HG1);
+		OS_Sleep(10); 
+		testcount4_4++;
+		LEDS = RED+BLUE;
+		OS_HGSignal(&test4_HG1);
+	  }
+  }
+
+
+int HGtestmain4(void){
+	OS_Init();  
+  PortF_Init();
+	Timer2_Init();
+  Timer4_Init();
+
+	OS_HGInit(&test4_HG1,1);
+  OS_HGInit(&test4_HG2,1);
+	OS_HGInit(&test4_HG3,1);
+  
+  NumCreated = 0 ;
+	 
+	NumCreated += OS_AddThread(&test4thread_4,128,4);
+	NumCreated += OS_AddThread(&test4thread_3,128,3);
+  NumCreated += OS_AddThread(&test4thread_2,128,2); 
+  NumCreated += OS_AddThread(&test4thread_1,128,1);
+  OS_Launch(TIME_1MS); // doesn't return, interrupts enabled in here
+  return 0;            // this never executes
+}
+
+//TEST 5: Multiple writers
+// adjust sleep timing such that
+// writer 2 - holds the HG
+// writer 1,writer 3,reader 1,reader 2 are waiting
+
+int testcount5_1 =0;
+int testcount5_2 =0;
+int testcount5_3 =0;
+int testcount5_4 =0;
+int testcount5_5 =0;
+HGType test5_HG1;
+void test5reader_1(void){
+	while(1){
+		OS_Sleep(4);
+		OS_HGWaitNonExclusive(&test5_HG1);
+		OS_Sleep(4);
+		testcount5_1++;
+		LEDS = RED;
+		OS_Sleep(3);
+		OS_HGSignal(&test5_HG1);
+	}
+}
+
+void test5reader_2(void){ 
+	while(1){
+		OS_Sleep(4);
+		OS_HGWaitNonExclusive(&test5_HG1);
+		OS_Sleep(4);
+		testcount5_2++;
+		LEDS = BLUE;
+		OS_Sleep(2);
+		OS_HGSignal(&test5_HG1);
+	}
+}
+
+void test5writer_1(void){
+	while(1){
+		OS_Sleep(10);
+		OS_HGWait(&test5_HG1); 
+		testcount5_3++;
+		LEDS = RED+BLUE;
+		OS_HGSignal(&test5_HG1);
+	  }
+  }
+
+void test5writer_2(void){  //
+	while(1){
+		OS_HGWait(&test5_HG1);
+		OS_Sleep(5);
+		testcount5_4++;
+		LEDS = GREEN;
+		OS_Sleep(1);
+		OS_HGSignal(&test5_HG1);
+	}
+}
+
+void test5writer_3(void){
+	while(1){
+		OS_HGWait(&test5_HG1); 
+		testcount5_5++;
+		LEDS = RED+BLUE;
+		OS_HGSignal(&test5_HG1);
+	  }
+  }
+int HGtestmain5(void){
+	OS_Init();  
+  PortF_Init();
+	Timer2_Init();
+  Timer4_Init();
+
+	OS_HGInit(&test5_HG1,1);
+	
+  NumCreated = 0 ;
+	 
+	NumCreated += OS_AddThread(&test5reader_1,128,3);
+	NumCreated += OS_AddThread(&test5reader_2,128,3);
+  NumCreated += OS_AddThread(&test5writer_1,128,1); 
+  NumCreated += OS_AddThread(&test5writer_2,128,4);
+	NumCreated += OS_AddThread(&test5writer_3,128,5);
+  OS_Launch(TIME_1MS); // doesn't return, interrupts enabled in here
+  return 0;            // this never executes
+}
+
+
+//barrier
+//thread 1,2,3 barrier one
+//thread 3,4,5 barrier 2
+// thread 6 independent thread 
+int testcount6_1 =0;
+int testcount6_2 =0;
+int testcount6_3 =0;
+int testcount6_4 =0;
+int testcount6_5 =0;
+int testcount6_6 =0;
+
+HGType test6_HGbarrier1,test6_HGbarrier2;
+
+void test6thread_1(void){
+	while(1){
+		testcount6_1++;
+		OS_HGSyncThreads(&test6_HGbarrier1);
+		LEDS = RED;
+		OS_Sleep(5);
+		testcount6_1++;
+		OS_HGSyncThreads(&test6_HGbarrier1);
+		OS_Sleep(3);
+	}
+}
+
+void test6thread_2(void){ //waiting for thread3
+	while(1){
+		testcount6_2++;
+		OS_HGSyncThreads(&test6_HGbarrier1);
+		LEDS = BLUE;
+		OS_Sleep(5);
+		testcount6_2++;
+		OS_HGSyncThreads(&test6_HGbarrier1);
+		OS_Sleep(3);
+	}
+}
+void test6thread_3(void){  //waiting for thread4
+	while(1){
+		testcount6_3++;
+		OS_HGSyncThreads(&test6_HGbarrier1);
+		LEDS = RED+BLUE;
+		OS_Sleep(5);
+		testcount6_3++;
+		OS_HGSyncThreads(&test6_HGbarrier2);
+		OS_HGSyncThreads(&test6_HGbarrier1);
+		OS_Sleep(3);
+	}
+}
+void test6thread_4(void){
+	while(1){
+		testcount6_4++;
+		OS_HGSyncThreads(&test6_HGbarrier2);
+		LEDS = GREEN;
+		OS_Sleep(5);
+		testcount6_4++;
+		OS_HGSyncThreads(&test6_HGbarrier2);
+		OS_Sleep(3);
+	  }
+  }
+
+	void test6thread_5(void){  //waiting for thread4
+	while(1){
+		testcount6_5++;
+		OS_HGSyncThreads(&test6_HGbarrier2);
+		LEDS = GREEN+RED;
+		OS_Sleep(5);
+		testcount6_5++;
+		OS_HGSyncThreads(&test6_HGbarrier2);
+		OS_Sleep(3);
+	}
+}
+void test6thread_6(void){
+	while(1){
+		testcount6_6++;
+		LEDS = RED+BLUE+GREEN;
+	  }
+  }
+
+int HGtestmain6(void){
+	OS_Init();  
+  PortF_Init();
+	Timer2_Init();
+  Timer4_Init();
+
+	OS_HGInit(&test6_HGbarrier1,0);
+  OS_HGInit(&test6_HGbarrier2,0);
+  
+  NumCreated = 0 ;
+	 
+	NumCreated += OS_AddThread(&test6thread_1,128,1);
+	NumCreated += OS_AddThread(&test6thread_2,128,3);
+  NumCreated += OS_AddThread(&test6thread_3,128,4); 
+  NumCreated += OS_AddThread(&test6thread_4,128,5);
+	NumCreated += OS_AddThread(&test6thread_5,128,6); 
+  NumCreated += OS_AddThread(&test6thread_6,128,2);
+  OS_Launch(TIME_1MS); // doesn't return, interrupts enabled in here
+  return 0;            // this never executes
+}
