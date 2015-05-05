@@ -420,7 +420,7 @@ void test5writer_3(void){
 		OS_HGSignal(&test5_HG1);
 	  }
   }
-int HGtestmain5(void){
+int main(void){
 	OS_Init();  
   PortF_Init();
 	Timer2_Init();
@@ -433,8 +433,8 @@ int HGtestmain5(void){
 	NumCreated += OS_AddThread(&test5reader_1,128,3);
 	NumCreated += OS_AddThread(&test5reader_2,128,3);
   NumCreated += OS_AddThread(&test5writer_1,128,1); 
-  NumCreated += OS_AddThread(&test5writer_2,128,4);
-	NumCreated += OS_AddThread(&test5writer_3,128,5);
+  NumCreated += OS_AddThread(&test5writer_2,128,1);
+	NumCreated += OS_AddThread(&test5writer_3,128,1);
   OS_Launch(TIME_1MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes
 }
@@ -517,7 +517,7 @@ void test6thread_6(void){
 	  }
   }
 
-int main(void){
+int HGTest6main(void){
 	OS_Init();  
   PortF_Init();
 	Timer2_Init();
@@ -528,11 +528,11 @@ int main(void){
   
   NumCreated = 0 ;
 	 
-	NumCreated += OS_AddThread_with_HGBarrier(&test6thread_1,128,1,&test6_HGbarrier1);
-	NumCreated += OS_AddThread_with_HGBarrier(&test6thread_2,128,3,&test6_HGbarrier1);
-  NumCreated += OS_AddThread_with_HGBarrier(&test6thread_3,128,4,&test6_HGbarrier1); 
-  NumCreated += OS_AddThread_with_HGBarrier(&test6thread_4,128,5,&test6_HGbarrier1);
-	NumCreated += OS_AddThread_with_HGBarrier(&test6thread_5,128,6,&test6_HGbarrier1); 
+	NumCreated += OS_AddThread_with_HGBarrier(&test6thread_1,128,1,&test6_HGbarrier1); //ID = 2
+	NumCreated += OS_AddThread_with_HGBarrier(&test6thread_2,128,3,&test6_HGbarrier1); //ID = 3
+  NumCreated += OS_AddThread_with_HGBarrier(&test6thread_3,128,4,&test6_HGbarrier1); //ID = 4
+  NumCreated += OS_AddThread_with_HGBarrier(&test6thread_4,128,5,&test6_HGbarrier1); //ID = 5
+	NumCreated += OS_AddThread_with_HGBarrier(&test6thread_5,128,6,&test6_HGbarrier1); //ID = 6
   NumCreated += OS_AddThread(&test6thread_6,128,2);
   OS_Launch(TIME_1MS); // doesn't return, interrupts enabled in here
   return 0;            // this never executes

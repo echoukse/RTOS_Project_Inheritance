@@ -59,6 +59,7 @@ struct  Hourglass{
 	TCBType *WaitExclusiveList; //head of threads waiting for the CS to empty, wanting to get into the CS alone
 	int free; //Are there any threads in the CS
 	int ExclusiveRunning; //Exclusive thread is inside the critical section
+	int Elevated; //Elevated priority
 	int priority; //Priority of the lowest thread inside the CS
 	struct Hourglass *next_HG; // so that we can make a list of all HGs held by a Thread	
 };

@@ -363,19 +363,23 @@ unsigned long findID(){
 //This function elevates the priority of all the threads that are 
 //currently inside the CS(InsideList).
 
-TCBType * Promote_priority(TCBType *Task, HGType * lock, int new_priority ){
+int Promote_priority(HGType * lock, int new_priority ){
 	int done =1;
+	int elevated = 0;
 	HGlistType *temp = lock->InsideList; 
 	while(temp) // iterate over all threads currently inside CS
 		{
 			if(TCBs[temp->TID].priority > new_priority)
 				{
+					//updating a priority, set elevated!
+					elevated = 1;
+					lock->Elevated = new_priority;
           if((TCBs[temp->TID].blocked == -1) && (TCBs[temp->TID].sleep == 0)){
 						do{
-							Task = DeleteTask(RunHead, &TCBs[temp->TID], 0,&done);
+							RunHead = DeleteTask(RunHead, &TCBs[temp->TID], 0,&done);
 							}while(done==0);
 						TCBs[temp->TID].priority =  new_priority;      // priority inheritance
-						Task = Insert_priorityTask(Task, &TCBs[temp->TID]);
+						RunHead = Insert_priorityTask(RunHead, &TCBs[temp->TID]);
 					}
 					else{
 						//If the thread is blocked or sleeping, just update the priority first.
@@ -384,12 +388,13 @@ TCBType * Promote_priority(TCBType *Task, HGType * lock, int new_priority ){
 						//Inside list of that HG.
 						if(TCBs[temp->TID].blocked != -1){
 							//Update/elevate the priorities of the tasks in the Inside list
-							Promote_priority(Task, HGs[TCBs[temp->TID].blocked], new_priority);
+							//Esha: Fix this! elevated will never be set/unset here :(
+							Promote_priority(HGs[TCBs[temp->TID].blocked], new_priority);
 							
 							//How to figure if it is waiting in NonExclusiveList, or Exclusive, or Barrier??
 							//Whichever list it is in, reorder it
 							if(is_in_list(HGs[TCBs[temp->TID].blocked]->WaitExclusiveList, &TCBs[temp->TID])){
-								int done = 0;
+								int done = 1;
 								while(!done){
 									HGs[TCBs[temp->TID].blocked]->WaitExclusiveList = \
 									DeleteTask(HGs[TCBs[temp->TID].blocked]->WaitExclusiveList, &TCBs[temp->TID], 0, &done);
@@ -399,7 +404,7 @@ TCBType * Promote_priority(TCBType *Task, HGType * lock, int new_priority ){
 							}
 							
 							else if (is_in_list(HGs[TCBs[temp->TID].blocked]->WaitNonExclusiveList, &TCBs[temp->TID])){
-								int done = 0;
+								int done = 1;
 								while(!done){
 									HGs[TCBs[temp->TID].blocked]->WaitNonExclusiveList = \
 									DeleteTask(HGs[TCBs[temp->TID].blocked]->WaitNonExclusiveList, &TCBs[temp->TID], 0, &done);
@@ -413,7 +418,7 @@ TCBType * Promote_priority(TCBType *Task, HGType * lock, int new_priority ){
 				}
 			temp = temp->next;
 		}	
-	return Task;
+	return elevated;
 }
 
 void initTCB(TCBType *myTCB, unsigned long myID, unsigned long priority){
@@ -1143,6 +1148,7 @@ void OS_HGInit( HGType *lock, int val){
 	lock->WaitBarrierList = NULL;
 	lock->WaitExclusiveList = NULL;
 	lock->ExclusiveRunning = 0;
+	lock->Elevated = -1;
 	lock->priority = 7; //lowest priority
 }
 
@@ -1191,7 +1197,7 @@ void OS_HGDereg( HGType *lock){
 	{
 		//Compare only with the blocked HGs. HG->priority holds the base priority for a blocked HG
 		//ESHA: TODO: update to check only elevated HGs
-		if((HG_iter->ExclusiveRunning) && (highest_priority > HG_iter->priority))
+		if((HG_iter->Elevated!=-1) && (highest_priority > HG_iter->Elevated))
 		{
 			highest_priority = HG_iter->priority;
 		}
@@ -1302,18 +1308,21 @@ void OS_HGDereg( HGType *lock){
 void OS_HGWaitNonExclusive( HGType *lock){
 	long sr = StartCritical();
 	int TID = RunPt->ID;
+	int IElevated;
   lock->free = 0;
 	//If there are exclusive ones in the CS, or higher priority exclusive waiting, get added to the waiting list
 	if((lock->ExclusiveRunning) || ((lock->WaitExclusiveList!=NULL) && (RunPt->priority > lock->WaitExclusiveList->priority)) \
 		|| ((lock->WaitBarrierList!=NULL) && (RunPt->priority > lock->WaitBarrierList->priority))){  //lock acquired by an  exclusive task 
 		RunPt->blocked = lock->HG_ID;
+		IElevated = 1; //Waited on a list, by the time I come out, elevation was gone
 		//elevate priority if necessary
 	 if(lock->InsideList)	
 			{ 
 				if(lock->priority > RunPt->priority) //if this thread has a higher priority than exclusive task in CS
 				{
 					lock->priority = RunPt->priority;
-					Promote_priority(RunHead,lock,TCBs[TID].priority);
+					lock->Elevated = TCBs[TID].priority;
+					Promote_priority(lock,TCBs[TID].priority);
 				}
 			}
 	 else 
@@ -1327,6 +1336,9 @@ void OS_HGWaitNonExclusive( HGType *lock){
 		EndCritical(sr);
 		OS_Suspend();
 	}
+	
+  if(IElevated)
+		lock->Elevated = -1;
   // obtained lock  
 	if(lock->InsideList)	
 	{
@@ -1343,17 +1355,20 @@ void OS_HGWaitNonExclusive( HGType *lock){
 void OS_HGWait( HGType *lock){
 	long sr = StartCritical();
 	int TID = RunPt->ID;
+	int IElevated;
 	//If there are readers in the CS, get added to the waiting list
 	if((lock->free == 0) || (lock->InsideList != NULL)){  //lock already acquired
 		RunPt->blocked = lock->HG_ID;
+		IElevated = 1; //Waited on a list, by the time I come out, elevation was gone
 		//elevate priority if necessary
 		if(lock->priority > RunPt->priority) //if registered threads holder has lower priority than blocked task 
 		{
 			lock->priority = RunPt->priority;
-		  Promote_priority(RunHead,lock,TCBs[TID].priority);
+			lock->Elevated = TCBs[TID].priority;
+			Promote_priority(lock,TCBs[TID].priority);
 		}
 		//sequence to add the thread to exclusive blocked list 
-		int done =1;
+		int done = 1;
 		do{
 		  RunHead = DeleteTask(RunHead, RunPt, 0,&done);
 		}while(done==0);
@@ -1363,6 +1378,9 @@ void OS_HGWait( HGType *lock){
 		OS_Suspend();
 	}
   //Obtained the lock
+	if(IElevated){
+		lock->Elevated = -1;
+	}
 	lock->free = 0;
   OS_HGreg(lock, RunPt->ID);	
 	lock->ExclusiveRunning = 1;   
@@ -1392,8 +1410,10 @@ void OS_HGSyncThreads(HGType *lock){
 	int TID = RunPt->ID;
   OS_HGDereg(lock);
 	TCBType *temp_TCBptr;
+	
 	if(lock->free){ //This was the last thread to call sync threads, wake every one
 		temp_TCBptr = lock->WaitBarrierList;
+		lock->Elevated = -1;
 		while(temp_TCBptr) {
 			int done = 1;
 			do{
@@ -1411,7 +1431,8 @@ void OS_HGSyncThreads(HGType *lock){
 		if(lock->priority > RunPt->priority) //if waiting thread has higher priority than still running tasks 
 		{
 			lock->priority = RunPt->priority;
-		  Promote_priority(RunHead,lock,TCBs[TID].priority);
+		  Promote_priority(lock,TCBs[TID].priority);
+			lock->Elevated = TCBs[TID].priority;
 		}
 		int done =1;
 		do{
