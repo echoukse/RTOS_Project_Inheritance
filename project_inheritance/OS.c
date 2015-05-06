@@ -38,7 +38,8 @@ unsigned int Stack[NumThreads+1][StackSize];
 
 TCBType TCBs[NumThreads+1];
 
-HGlistType HG_Threads[HG_Number][NumThreads];
+HGThreadlistType HG_Threads[HG_Number][NumThreads];
+HGlistType HGperThread[HG_Number][NumThreads];
 HGType *HGs[HG_Number];
 unsigned long unique_IDs[NumThreads+1];
 
@@ -155,8 +156,8 @@ void Jitter(void){
   
 }
 //insert HG structure in the list in ascending order of priority (lowest first)
-HGlistType * InsertHGlist(HGlistType *head, HGlistType *Node){
-	HGlistType *temp, *temp1;
+HGThreadlistType * InsertHGThreadlist(HGThreadlistType *head, HGThreadlistType *Node){
+	HGThreadlistType *temp, *temp1;
 	if(head==NULL){ //first thread to enter the critical section 
 		head = Node;
 		Node->next = NULL;
@@ -197,8 +198,8 @@ HGlistType * InsertHGlist(HGlistType *head, HGlistType *Node){
 
 }
 
-HGlistType* DeleteHGlistType(HGlistType *head, int TID){
-	HGlistType *temp, *temp1;
+HGThreadlistType* DeleteHGThreadlistType(HGThreadlistType *head, int TID){
+	HGThreadlistType *temp, *temp1;
 	if(TID == head->TID)
 	 {
  		 head = head->next;
@@ -216,18 +217,18 @@ HGlistType* DeleteHGlistType(HGlistType *head, int TID){
   return head;	
 }
 
-HGType * InsertHGs(HGType *head, HGType *Node){
-	HGType *temp;
+HGlistType * InsertHGs(HGlistType *head, HGlistType *Node){
+	HGlistType *temp;
 	if(head==NULL){
 		head = Node;
-		Node->next_HG = NULL;
+		Node->next = NULL;
 		return head;
 	}
 	temp = head;
-	while(temp->next_HG)
-	  temp = temp->next_HG;
-	temp->next_HG = Node;
-	Node->next_HG = NULL;
+	while(temp->next)
+	  temp = temp->next;
+	temp->next = Node;
+	Node->next = NULL;
 	return head;
 }
 
@@ -246,20 +247,20 @@ Sema4Type * InsertSema4(Sema4Type *head, Sema4Type *Node){
 	return head;
 }
 
-HGType* DeleteHGs(HGType *head, HGType *Node){
-	HGType *temp,*temp1 ;
+HGlistType* DeleteHGs(HGlistType *head, HGlistType *Node){
+	HGlistType *temp,*temp1 ;
 	if(Node == head)
 	 {
- 		 head = head->next_HG;
+ 		 head = head->next;
 		 return head;
 	 }
 	temp = head;
-	while((temp->next_HG !=Node)&&(temp!=NULL))
-		 temp = temp->next_HG;
-	if(temp->next_HG == Node) //match found
+	while((temp->next !=Node)&&(temp!=NULL))
+		 temp = temp->next;
+	if(temp->next == Node) //match found
 	{ 
-		temp1 = temp->next_HG;
-	  temp->next_HG = temp->next_HG->next_HG;
+		temp1 = temp->next;
+	  temp->next = temp->next->next;
 		free(temp1);
 	}	
   return head;	
@@ -366,7 +367,7 @@ unsigned long findID(){
 int Promote_priority(HGType * lock, int new_priority ){
 	int done =1;
 	int elevated = 0;
-	HGlistType *temp = lock->InsideList; 
+	HGThreadlistType *temp = lock->InsideList; 
 	while(temp) // iterate over all threads currently inside CS
 		{
 			if(TCBs[temp->TID].priority > new_priority)
@@ -1157,15 +1158,16 @@ void OS_HGreg( HGType *lock, int TID){
 	long status = StartCritical();
 	// This thread just registers, so no priority inheritance done here.
 	//First get a new Node initialised
-	HGlistType *newnode ;
-	newnode = &(HG_Threads[lock->HG_ID][TID]);//(HGlistType*)malloc(sizeof(HGlistType));
+	HGThreadlistType *newnode ;
+	newnode = &(HG_Threads[lock->HG_ID][TID]);//(HGThreadlistType*)malloc(sizeof(HGThreadlistType));
 	newnode->TID = TID;
-	RunPt->HGptr = InsertHGs(lock,RunPt->HGptr);
+	HGperThread[lock->HG_ID][TID].HG_ID = lock->HG_ID;
+	RunPt->HGptr = InsertHGs(RunPt->HGptr,&HGperThread[lock->HG_ID][TID]);
 	RunPt->blocked = -1; //Not blocked anymore
 	
 	//Add it to the list of registered ones 
 	//In ascending order of priorities
-  lock->InsideList = InsertHGlist(lock->InsideList,newnode); 
+  lock->InsideList = InsertHGThreadlist(lock->InsideList,newnode); 
 	EndCritical(status);
 }
 
@@ -1177,11 +1179,11 @@ void OS_HGDereg( HGType *lock){
 	long status = StartCritical();
 	int TID = RunPt->ID; 
 	//First remove it from the list
-  lock->InsideList = DeleteHGlistType(lock->InsideList,TID); 
+  lock->InsideList = DeleteHGThreadlistType(lock->InsideList,TID); 
 	//Now rollback its priority
 	//## added priority inheritance
 	
-	RunPt->HGptr = DeleteHGs(RunPt->HGptr,lock); //delete the HG  from the list of HGs held by this thread
+	RunPt->HGptr = DeleteHGs(RunPt->HGptr, &HGperThread[lock->HG_ID][TID]); //delete the HG  from the list of HGs held by this thread
   if(RunPt->priority == lock->priority)
 		{  
 			if(lock->InsideList == NULL)
@@ -1192,16 +1194,16 @@ void OS_HGDereg( HGType *lock){
   
   int highest_priority = RunPt->actual_priority;		
   TCBType *temp_TCBptr;
-	HGType *HG_iter = RunPt->HGptr;
+	HGlistType *HG_iter = RunPt->HGptr;
 	while(HG_iter)  //if tasks holds other HGs
 	{
 		//Compare only with the blocked HGs. HG->priority holds the base priority for a blocked HG
 		//ESHA: TODO: update to check only elevated HGs
-		if((HG_iter->Elevated!=-1) && (highest_priority > HG_iter->Elevated))
+		if((HGs[HG_iter->HG_ID]->Elevated!=-1) && (highest_priority > HGs[HG_iter->HG_ID]->Elevated))
 		{
-			highest_priority = HG_iter->priority;
+			highest_priority = HGs[HG_iter->HG_ID]->priority;
 		}
-		HG_iter = HG_iter->next_HG;
+		HG_iter = HG_iter->next;
 	}
 	
 	RunPt->priority = highest_priority;  // Set the priority
@@ -1211,12 +1213,12 @@ void OS_HGDereg( HGType *lock){
 	HG_iter = RunPt->HGptr;
 	while(HG_iter)
 	{
-		HGlistType *newnode ;
-	  newnode = &(HG_Threads[HG_iter->HG_ID][TID]);//(HGlistType*)malloc(sizeof(HGlistType));
+		HGThreadlistType *newnode ;
+	  newnode = &(HG_Threads[HG_iter->HG_ID][TID]);//(HGThreadlistType*)malloc(sizeof(HGThreadlistType));
 	  newnode->TID = TID;
-		HG_iter->InsideList = DeleteHGlistType(HG_iter->InsideList,TID); 
-		HG_iter->InsideList = InsertHGlist(HG_iter->InsideList, newnode); 
-		HG_iter = HG_iter->next_HG;
+		HGs[HG_iter->HG_ID]->InsideList = DeleteHGThreadlistType(HGs[HG_iter->HG_ID]->InsideList,TID); 
+		HGs[HG_iter->HG_ID]->InsideList = InsertHGThreadlist(HGs[HG_iter->HG_ID]->InsideList, newnode); 
+		HG_iter = HG_iter->next;
 	}
 
   // In RunList, Add the same task back with updated priority

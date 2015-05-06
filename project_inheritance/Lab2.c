@@ -131,11 +131,6 @@ int HGTEST1main(void){
 	OS_Launch(TIME_1MS);
 }
 
-
-
-
-
-
 HGType mutex1, mutex2;
  void thread_p1(void){  // foreground thread - highest priority       
   for(;;){
@@ -315,7 +310,7 @@ void test4thread_2(void){ //waiting for thread3
 }
 void test4thread_3(void){  //waiting for thread4
 	while(1){
-		OS_Sleep(1);
+		OS_Sleep(2);
 		OS_HGWait(&test4_HG2);
 		OS_HGWait(&test4_HG1);
 		testcount4_3++;
@@ -336,7 +331,7 @@ void test4thread_4(void){
   }
 
 
-int HGtestmain4(void){
+int main(void){
 	OS_Init();  
   PortF_Init();
 	Timer2_Init();
@@ -420,7 +415,7 @@ void test5writer_3(void){
 		OS_HGSignal(&test5_HG1);
 	  }
   }
-int main(void){
+int HGTest5main(void){
 	OS_Init();  
   PortF_Init();
 	Timer2_Init();

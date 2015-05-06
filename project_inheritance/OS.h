@@ -32,6 +32,16 @@ typedef  struct  os_tcb TCBType;
 typedef  struct  Hourglass HGType;
 typedef HGType * HGPType;
 
+typedef struct HGThreadlist{
+	int TID;
+	struct HGThreadlist *next;
+}HGThreadlistType;
+
+typedef struct HGlist{
+	int HG_ID;
+	struct HGlist *next;
+}HGlistType;
+
 struct os_tcb{		
 	unsigned int *sp;
 	TCBType *Next;
@@ -42,18 +52,15 @@ struct os_tcb{
 	unsigned long actual_priority;
 	unsigned long priority;
 	Sema4Type *Semaptr; //List of semaphores held by this thread
-	HGType *HGptr; //List of hourglass constructs on which task is blocked
+	HGlistType *HGptr; //List of hourglass constructs on which task is blocked
 };
 
-typedef struct HGlist{
-	int TID;
-	struct HGlist *next;
-}HGlistType;
+
 
 /*Hourglass*/
 struct  Hourglass{
 	int HG_ID;
-	HGlistType *InsideList; //List of the threads inside the CS of this hourglass
+	HGThreadlistType *InsideList; //List of the threads inside the CS of this hourglass
 	TCBType *WaitNonExclusiveList;  //head of the blocked list on this hourglass - list of readers
 	TCBType *WaitBarrierList; //head of threads waiting for the CS to empty. But they dont want to get into the CS
 	TCBType *WaitExclusiveList; //head of threads waiting for the CS to empty, wanting to get into the CS alone
