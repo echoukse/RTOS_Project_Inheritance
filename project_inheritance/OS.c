@@ -14,6 +14,9 @@
 #include "UART.h"
 
 
+#define PF1       (*((volatile uint32_t *)0x40025008))
+#define PF2       (*((volatile uint32_t *)0x40025010))
+#define PF3       (*((volatile uint32_t *)0x40025020))
 #define LEDS      (*((volatile uint32_t *)0x40025038))
 #define RED       0x02
 #define BLUE      0x04
@@ -1155,6 +1158,7 @@ void OS_HGInit( HGType *lock, int val){
 
 /*Hourglass*/
 void OS_HGreg( HGType *lock, int TID){
+	//DO NOT USE RUNPT IN THIS FUNCTION, NOT INITIALIZED FOR ADDTHREADBARRIER
 	long status = StartCritical();
 	// This thread just registers, so no priority inheritance done here.
 	//First get a new Node initialised
@@ -1162,8 +1166,8 @@ void OS_HGreg( HGType *lock, int TID){
 	newnode = &(HG_Threads[lock->HG_ID][TID]);//(HGThreadlistType*)malloc(sizeof(HGThreadlistType));
 	newnode->TID = TID;
 	HGperThread[lock->HG_ID][TID].HG_ID = lock->HG_ID;
-	RunPt->HGptr = InsertHGs(RunPt->HGptr,&HGperThread[lock->HG_ID][TID]);
-	RunPt->blocked = -1; //Not blocked anymore
+	TCBs[TID].HGptr = InsertHGs(TCBs[TID].HGptr,&HGperThread[lock->HG_ID][TID]);
+	TCBs[TID].blocked = -1; //Not blocked anymore
 	
 	//Add it to the list of registered ones 
 	//In ascending order of priorities
@@ -1430,6 +1434,7 @@ void OS_HGSyncThreads(HGType *lock){
 	}
 	else{ //Need to wait for other threads to reach barrier. Add this thread to the BarrierList
 		//sequence to add the thread to barrier wait list 
+		RunPt->blocked = lock->HG_ID;
 		if(lock->priority > RunPt->priority) //if waiting thread has higher priority than still running tasks 
 		{
 			lock->priority = RunPt->priority;
@@ -1451,6 +1456,9 @@ void SysTick_Handler(void){
 	TCBType *temp, *next;
 	SystickRollover++;
 	KillPt = NULL;
+	PF3 = 0x0;
+	PF2 = 0;
+	PF1 = 0;
 	if(SleepPt!=NULL){
 		temp = SleepPt;
 		do{
